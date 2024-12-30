@@ -29,6 +29,8 @@ def run_detection(source, weights, img_size, conf_thres, iou_thres, device, view
         command.append("--augment")
 
     subprocess.run(command)
+    # Call report.py after detection is complete
+    subprocess.run(["python", "report.py"])
 
 def start_detection():
     source = source_entry.get()
@@ -52,6 +54,11 @@ def browse_source():
     source_entry.delete(0, tk.END)
     source_entry.insert(0, file_path)
 
+def browse_folder():
+    folder_path = filedialog.askdirectory()
+    source_entry.delete(0, tk.END)
+    source_entry.insert(0, folder_path)
+
 def browse_weights():
     file_path = filedialog.askopenfilename()
     weights_entry.delete(0, tk.END)
@@ -65,7 +72,8 @@ root.title("YOLOv7 Object Detection and Tracking")
 tk.Label(root, text="Source:").grid(row=0, column=0, sticky=tk.W)
 source_entry = tk.Entry(root, width=50)
 source_entry.grid(row=0, column=1, padx=5, pady=5)
-tk.Button(root, text="Browse", command=browse_source).grid(row=0, column=2, padx=5, pady=5)
+tk.Button(root, text="Browse File", command=browse_source).grid(row=0, column=2, padx=5, pady=5)
+tk.Button(root, text="Browse Folder", command=browse_folder).grid(row=0, column=3, padx=5, pady=5)
 
 tk.Label(root, text="Weights:").grid(row=1, column=0, sticky=tk.W)
 weights_entry = tk.Entry(root, width=50)
@@ -111,7 +119,7 @@ tk.Checkbutton(root, text="Agnostic NMS", variable=agnostic_nms_var).grid(row=8,
 augment_var = tk.BooleanVar()
 tk.Checkbutton(root, text="Augmented Inference", variable=augment_var).grid(row=8, column=1, sticky=tk.W)
 
-tk.Button(root, text="Start Detection", command=start_detection).grid(row=9, column=0, columnspan=3, pady=10)
+tk.Button(root, text="Start Detection", command=start_detection).grid(row=9, column=0, columnspan=4, pady=10)
 
 # Start the main loop
 root.mainloop()

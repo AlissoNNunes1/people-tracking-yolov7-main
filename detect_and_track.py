@@ -1,6 +1,7 @@
 import os
 import cv2
 import time
+import json
 import torch
 import argparse
 from pathlib import Path
@@ -22,6 +23,19 @@ from utils.download_weights import download
 # For SORT tracking
 import skimage
 from sort import *
+
+from extract import (
+    interpolate_trajectory,
+    calculate_distance,
+    save_distance_to_file,
+    calculate_instantaneous_speed,
+    calculate_average_speed,
+    calculate_instantaneous_acceleration,
+    calculate_average_acceleration,
+    calculate_direction_changes,
+    calculate_total_area,
+    calculate_stop_time
+)
 
 # ............................... Tracker Functions ............................
 """ Random created palette"""
@@ -60,37 +74,7 @@ def draw_boxes(img, bbox, identities=None, categories=None, names=None, offset=(
         # cv2.circle(img, data, 6, color,-1)
     return img
 
-"""Function to Interpolate Trajectory"""
-def interpolate_trajectory(centroidarr):
-    if len(centroidarr) < 2:
-        return centroidarr
-    interpolated = []
-    for i in range(len(centroidarr) - 1):
-        interpolated.append(centroidarr[i])
-        x1, y1 = centroidarr[i]
-        x2, y2 = centroidarr[i + 1]
-        num_points = int(np.hypot(x2 - x1, y2 - y1))
-        for j in range(1, num_points):
-            interpolated.append((x1 + j * (x2 - x1) / num_points, y1 + j * (y2 - y1) / num_points))
-    interpolated.append(centroidarr[-1])
-    return interpolated
-PIXELS_TO_METERS = 0.0002645833 
-distance_dict = {}
 
-"""Function to Calculate Distance"""
-def calculate_distance(centroidarr):
-    distance = 0.0
-    for i in range(1, len(centroidarr)):
-        x1, y1 = centroidarr[i - 1]
-        x2, y2 = centroidarr[i]
-        distance += np.hypot(x2 - x1, y2 - y1) * PIXELS_TO_METERS
-    return distance
-
-"""Function to Save Distance to a File"""
-def save_distance_to_file(save_dir, track_id, distance):
-    if track_id not in distance_dict:
-        distance_dict[track_id] = 0.0
-    distance_dict[track_id] += distance
     
     # Sobrescrever o arquivo com a distância acumulada para cada ID
     with open(f"{save_dir}/distances.txt", "w") as f:
@@ -99,13 +83,23 @@ def save_distance_to_file(save_dir, track_id, distance):
 
 
 # ..............................................................................
-
+def save_metrics_to_json(save_dir, metrics):
+    with open(f"{save_dir}/movement_data.json", "w") as f:
+        json.dump(metrics, f)
 
 def detect(save_img=False):
     source, weights, view_img, save_txt, imgsz, trace = opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size, not opt.no_trace
     save_img = not opt.nosave and not source.endswith('.txt')  # save inference images
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
         ('rtsp://', 'rtmp://', 'http://', 'https://'))
+    metrics = {
+        "distance": [],
+        "avg_speed": [],
+        "avg_acceleration": [],
+        "direction_changes": [],
+        "total_area": [],
+        "stop_time": []
+    }
 
     # .... Initialize SORT ....
     # .........................
@@ -240,9 +234,27 @@ def detect(save_img=False):
                     smoothed_centroidarr = interpolate_trajectory(track.centroidarr)
                     # Calculate distance
                     distance = calculate_distance(smoothed_centroidarr)
-                    
                     save_distance_to_file(save_dir, track.id, distance)
-                    # draw tracks
+
+                    # Calculate additional metrics
+                    fps = 30  # Example FPS, adjust as needed
+                    speeds = calculate_instantaneous_speed(smoothed_centroidarr, fps)
+                    avg_speed = calculate_average_speed(speeds)
+                    accelerations = calculate_instantaneous_acceleration(speeds, fps)
+                    avg_acceleration = calculate_average_acceleration(accelerations)
+                    direction_changes = calculate_direction_changes(smoothed_centroidarr)
+                    total_area = calculate_total_area(smoothed_centroidarr)
+                    stop_time = calculate_stop_time(speeds, fps)
+                    
+                     # Save metrics
+                    metrics["distance"].append(distance)
+                    metrics["avg_speed"].append(avg_speed)
+                    metrics["avg_acceleration"].append(avg_acceleration)
+                    metrics["direction_changes"].append(len(direction_changes))
+                    metrics["total_area"].append(total_area)
+                    metrics["stop_time"].append(stop_time)
+
+                    print(f"ID {track.id} - Distance: {distance:.2f} meters, Avg Speed: {avg_speed:.2f} m/s, Avg Acceleration: {avg_acceleration:.2f} m/s², Direction Changes: {len(direction_changes)}, Total Area: {total_area:.2f} m², Stop Time: {stop_time:.2f} s")
                     [cv2.line(im0, (int(smoothed_centroidarr[i][0]),
                                     int(smoothed_centroidarr[i][1])),
                               (int(smoothed_centroidarr[i + 1][0]),
